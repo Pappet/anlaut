@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#2E6FB7">
+<title>Anlaut-Post</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/favicon-32.png">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#26313D;--sky:#CFE8FA;--road:#9FA8B0}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden}
+body{font-family:'Fredoka',ui-rounded,system-ui,sans-serif;color:var(--ink);background:var(--sky);
+  user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;touch-action:none}
+#app{height:100dvh;display:flex;flex-direction:column}
+
+header{position:relative;height:64px;flex:none;z-index:6;background:linear-gradient(#2E6FB7,#3D86D6);
+  border-bottom:8px solid #1F548F}
+.sign{position:absolute;left:50%;top:9px;transform:translateX(-50%);background:#FFD34E;color:var(--ink);
+  border:4px solid #fff;border-radius:18px;padding:2px 22px;font-weight:700;font-size:clamp(19px,2.8vw,28px);
+  white-space:nowrap;box-shadow:0 4px 0 rgba(0,0,0,.2)}
+.stats{position:absolute;right:10px;top:11px;display:flex;gap:8px}
+.chip{background:#fff;border-radius:999px;padding:2px 13px;font-weight:700;font-size:21px;border:none;
+  box-shadow:0 3px 0 rgba(0,0,0,.15);font-family:inherit;color:inherit;display:flex;align-items:center;gap:6px}
+.chip.bump{animation:bump .4s}
+@keyframes bump{50%{transform:scale(1.3)}}
+
+#scene{position:relative;flex:1;overflow:hidden;touch-action:none;
+  background:linear-gradient(var(--sky) 0 62%,#8FD07A 62% 72%,var(--road) 72%)}
+.cloud{position:absolute;color:#fff;font-size:46px;opacity:.85;pointer-events:none}
+.stripes{position:absolute;left:0;right:0;top:calc(72% + 6%);height:8px;pointer-events:none;
+  background:repeating-linear-gradient(90deg,#fff 0 44px,transparent 44px 92px);opacity:.8}
+
+/* Briefkästen */
+#boxes{position:absolute;left:0;right:0;bottom:var(--bb);display:flex;justify-content:center;align-items:flex-end;gap:clamp(10px,3vw,42px);padding:0 12px}
+.box{position:relative;width:var(--bw);cursor:pointer}
+.box .body{position:relative;height:var(--bh);border-radius:16px 16px 8px 8px;
+  background:linear-gradient(160deg,var(--cl),var(--c) 60%,var(--cd));border:4px solid var(--cd);
+  display:grid;place-items:center;box-shadow:0 7px 0 rgba(0,0,0,.18);transition:transform .15s}
+.box .letter{font-size:calc(var(--bh)*.66);font-weight:700;color:#fff;line-height:1;
+  text-shadow:0 3px 0 rgba(0,0,0,.25)}
+.box .slot{position:absolute;left:14%;right:14%;top:12%;height:9%;border-radius:6px;background:rgba(0,0,0,.4)}
+.box .post{height:calc(var(--bh)*.5);margin:0 auto;width:14%;background:linear-gradient(#8C6239,#6E4A28)}
+.box.hot .body{transform:translateY(-10px) scale(1.06);box-shadow:0 14px 0 rgba(0,0,0,.18),0 0 0 6px #fff}
+.box.open .body{animation:open .5s}
+@keyframes open{40%{transform:translateY(-14px) rotate(-3deg)}}
+.box.wrong .body{animation:shake .45s}
+@keyframes shake{25%{transform:translateX(-12px)}75%{transform:translateX(12px)}}
+.box.new .body{animation:pop .6s cubic-bezier(.3,1.6,.5,1)}
+@keyframes pop{0%{transform:scale(0)}}
+.box .hint{position:absolute;left:50%;top:-34px;transform:translateX(-50%);opacity:0;font-size:30px;transition:opacity .3s}
+.box.tip .hint{opacity:1;animation:bob .6s infinite alternate}
+@keyframes bob{to{translate:0 -8px}}
+
+/* Paket */
+#parcel{position:absolute;width:var(--pw);height:var(--pw);border-radius:14px;touch-action:none;cursor:grab;z-index:20;
+  background:linear-gradient(150deg,#E8C79A,#D2A876);border:4px solid #A97E4E;
+  display:grid;place-items:center;box-shadow:0 8px 0 rgba(0,0,0,.18)}
+#parcel::after{content:'';position:absolute;left:0;right:0;top:calc(50% - 5px);height:10px;background:#C8493A;opacity:.75}
+#parcel .pic{font-size:calc(var(--pw)*.62);line-height:1;position:relative;z-index:1;filter:drop-shadow(0 2px 1px rgba(0,0,0,.2))}
+#parcel.drag{cursor:grabbing;filter:drop-shadow(0 12px 8px rgba(0,0,0,.3));scale:1.06}
+#parcel.glide{transition:left .4s ease,top .4s ease}
+#parcel.gone{transition:transform .5s ease-in,opacity .5s;transform:scale(.15) translateY(-30px);opacity:0}
+#parcel.enter{animation:slidein .6s cubic-bezier(.2,.9,.3,1.1)}
+@keyframes slidein{0%{translate:-60vw 0}}
+#parcel.wig{animation:wig .5s 2}
+@keyframes wig{25%{rotate:-5deg}75%{rotate:5deg}}
+
+/* Postauto */
+#van{position:absolute;bottom:2%;left:-25%;font-size:var(--van);line-height:1;z-index:5;pointer-events:none;
+  transition:left 1.1s cubic-bezier(.4,0,.5,1)}
+#speak{position:absolute;left:14px;bottom:12px;z-index:30;width:66px;height:66px;border-radius:50%;border:4px solid #fff;
+  background:#FFD34E;font-size:30px;cursor:pointer;box-shadow:0 5px 0 rgba(0,0,0,.2)}
+#speak:active{transform:translateY(3px);box-shadow:0 2px 0 rgba(0,0,0,.2)}
+
+#round{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;gap:7px;z-index:15}
+.dot{width:15px;height:15px;border-radius:50%;background:rgba(255,255,255,.6);border:2px solid rgba(0,0,0,.2)}
+.dot.done{background:#FFD34E}
+
+#banner{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%) scale(.6);opacity:0;z-index:70;
+  background:#fff;border:5px solid #2E6FB7;border-radius:26px;padding:16px 34px;text-align:center;
+  font-size:clamp(24px,4vw,40px);font-weight:700;transition:.4s cubic-bezier(.3,1.6,.5,1)}
+#banner.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.fx{position:fixed;font-size:42px;pointer-events:none;z-index:80;animation:rise 1.2s ease-out forwards}
+@keyframes rise{to{transform:translate(var(--dx),var(--dy)) scale(1.4);opacity:0}}
+
+#start{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
+  background:rgba(207,232,250,.95)}
+#start .big{font-size:min(26vh,180px);line-height:1;animation:drive 2.6s ease-in-out infinite}
+@keyframes drive{50%{translate:14% 0}}
+#start h1{margin:0;font-size:clamp(34px,6vw,62px);color:#2E6FB7;font-weight:700;text-align:center}
+#go{font-family:inherit;font-size:clamp(26px,4vw,40px);font-weight:700;color:var(--ink);background:#FFD34E;
+  border:none;border-radius:999px;padding:18px 44px;box-shadow:0 8px 0 #C79E22;cursor:pointer}
+#go:active{transform:translateY(5px);box-shadow:0 3px 0 #C79E22}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="sign">Anlaut-Post</div>
+    <div class="stats">
+      <span class="chip" id="starChip">⭐ <b id="stars">0</b></span>
+      <button class="chip" id="fs" aria-label="Vollbild">⛶</button>
+    </div>
+  </header>
+  <div id="scene">
+    <span class="cloud" style="left:6%;top:4%">☁️</span>
+    <span class="cloud" style="right:10%;top:9%">☁️</span>
+    <div class="stripes"></div>
+    <div id="boxes"></div>
+    <div id="van">🚚</div>
+    <button id="speak" aria-label="Nochmal anhören">🔊</button>
+    <div id="round"></div>
+  </div>
+</div>
+<div id="banner"></div>
+<div id="start">
+  <div class="big">📮</div>
+  <h1>Anlaut-Post</h1>
+  <button id="go">Post austragen</button>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const rnd = (a,b) => a + Math.floor(Math.random()*(b-a+1));
+const pick = a => a[Math.floor(Math.random()*a.length)];
+const shuffle = a => a.map(v=>[Math.random(),v]).sort((x,y)=>x[0]-y[0]).map(x=>x[1]);
+const SAVE_KEY = 'anlaut-spielstand';
+
+/* Reihenfolge: erst dehnbare Laute, dann Vokale, zuletzt harte Laute.
+   long = Laut lässt sich dehnen (dann wird der Wortanfang verlängert gesprochen).
+   Isolierte Laute werden NIE gesprochen: Android-TTS liest "lll" sonst als "El El El".
+   Stattdessen immer ein echtes Wort mit verlängertem Anfang, z.B. "Lllöwe". */
+const LETTERS = {
+  S:{long:true,  color:'#E4572E',
+     words:[['Sonne','☀️'],['Stern','⭐'],['Socke','🧦'],['Seehund','🦭'],['Schnecke','🐌']]},
+  M:{long:true,  color:'#2E86AB',
+     words:[['Maus','🐭'],['Mond','🌙'],['Milch','🥛'],['Melone','🍉'],['Marienkäfer','🐞'],['Mais','🌽']]},
+  L:{long:true,  color:'#6A4C93',
+     words:[['Löwe','🦁'],['Luftballon','🎈'],['Lolli','🍭'],['Leiter','🪜'],['Lokomotive','🚂']]},
+  N:{long:true,  color:'#1B998B',
+     words:[['Nase','👃'],['Nadel','🪡'],['Nilpferd','🦛'],['Note','🎵']]},
+  F:{long:true,  color:'#F18F01',
+     words:[['Fisch','🐟'],['Frosch','🐸'],['Feuer','🔥'],['Fuchs','🦊'],['Feder','🪶'],['Fahrrad','🚲']]},
+  R:{long:true,  color:'#C1121F',
+     words:[['Rakete','🚀'],['Regenbogen','🌈'],['Ring','💍'],['Roboter','🤖'],['Rose','🌹']]},
+  A:{long:true,  color:'#D65780',
+     words:[['Apfel','🍎'],['Ananas','🍍'],['Auto','🚗'],['Ampel','🚦'],['Auge','👁️'],['Affe','🐵']]},
+  O:{long:true,  color:'#3A86FF',
+     words:[['Orange','🍊'],['Ohr','👂'],['Olive','🫒'],['Otter','🦦']]},
+  I:{long:true,  color:'#8AC926',
+     words:[['Igel','🦔'],['Insel','🏝️'],['Iglu','🛖']]},
+  B:{long:false,  color:'#5C946E',
+     words:[['Banane','🍌'],['Baum','🌳'],['Ball','⚽'],['Biene','🐝'],['Bär','🐻'],['Buch','📕'],['Brot','🍞']]},
+  T:{long:false,  color:'#9E2B25',
+     words:[['Tiger','🐯'],['Tomate','🍅'],['Traube','🍇'],['Taxi','🚕'],['Tasse','☕']]},
+  K:{long:false,  color:'#7B6D8D',
+     words:[['Katze','🐱'],['Krone','👑'],['Koffer','🧳'],['Kuh','🐮'],['Kerze','🕯️'],['Krokodil','🐊']]},
+  P:{long:false,  color:'#00A5CF',
+     words:[['Pinguin','🐧'],['Pilz','🍄'],['Pizza','🍕'],['Panda','🐼'],['Paprika','🫑']]},
+  D:{long:false,  color:'#A44A3F',
+     words:[['Delfin','🐬'],['Drache','🐉'],['Dino','🦕'],['Dose','🥫'],['Dusche','🚿']]}
+};
+/* Freischaltreihenfolge */
+const ORDER = ['S','M','L','A','F','B','N','O','T','R','K','I','P','D'];
+/* Diese Paare klingen zu ähnlich und kommen nie zusammen in eine Runde */
+const CONFUSE = [['B','P'],['D','T'],['M','N'],['F','S']];
+
+const S = {letters:2, boxes:[], target:null, word:null, done:0, stars:0, busy:false, hintT:null, roundLen:7};
+
+/* ---------- Ton & Sprache ---------- */
+let AC=null;
+function ac(){ if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}} if(AC&&AC.state==='suspended')AC.resume(); return AC; }
+function tone(f,d=.12,type='sine',vol=.16,delay=0,slide=0){
+  const a=ac(); if(!a) return; const t=a.currentTime+delay;
+  const o=a.createOscillator(), g=a.createGain(); o.type=type; o.frequency.setValueAtTime(f,t);
+  if(slide) o.frequency.exponentialRampToValueAtTime(f*slide,t+d);
+  g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+.01); g.gain.exponentialRampToValueAtTime(.0001,t+d);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t+d+.03);
+}
+const SFX = {
+  grab:()=>tone(620,.07,'triangle',.11),
+  post:()=>{tone(523,.09,'triangle',.15);tone(784,.14,'triangle',.15,.08)},
+  nope:()=>tone(210,.16,'square',.05),
+  win:()=>[523,659,784,1047].forEach((f,i)=>tone(f,.2,'triangle',.16,i*.1)),
+  horn:()=>{tone(330,.22,'square',.08);tone(262,.28,'square',.08,.2)},
+  fan:()=>[523,587,659,784,880,1047].forEach((f,i)=>tone(f,.22,'triangle',.14,i*.12))
+};
+let voice=null;
+const HAS_SPEECH = 'speechSynthesis' in window;
+function pickVoice(){ voice = speechSynthesis.getVoices().find(v=>v.lang&&v.lang.toLowerCase().startsWith('de'))||null; }
+if(HAS_SPEECH){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+/* Wortanfang dehnen: "Fisch" -> "Ffffisch". Nur bei dehnbaren Lauten sinnvoll. */
+function stretched(word, letter){
+  if(!LETTERS[letter].long) return word;
+  // klein geschrieben, sonst liest Android-TTS "SSSSonne" wieder als Abkürzung
+  const w = word.toLowerCase();
+  return w[0].repeat(4) + w.slice(1);
+}
+const anchorOf = L => LETTERS[L].anchor || LETTERS[L].words[0][0];
+
+function say(text, {cancel=true, rate=.9, delay=0}={}){
+  if(!HAS_SPEECH) return;
+  if(cancel) speechSynthesis.cancel();
+  const go = () => { const u=new SpeechSynthesisUtterance(text); u.lang='de-DE'; if(voice)u.voice=voice;
+    u.rate=rate; u.pitch=1.12; speechSynthesis.speak(u); };
+  delay ? setTimeout(go, delay) : go();
+}
+/* Dreistufig: ganzes Wort, Wortanfang gedehnt, Frage. Nie ein isolierter Laut. */
+function sayWord(full=true){
+  const T = S.target, w = S.word[0];
+  if(!HAS_SPEECH) return;
+  speechSynthesis.cancel();
+  say(w, {cancel:false});
+  if(!full) return;
+  say(stretched(w, T), {cancel:false, rate:.66, delay:900});
+  say('Womit fängt ' + w + ' an?', {cancel:false, delay:2600});
+}
+
+/* ---------- Spielstand ---------- */
+function load(){ try{const d=JSON.parse(localStorage.getItem(SAVE_KEY)||'{}');
+  S.letters=Math.min(ORDER.length, Math.max(2, d.letters||2)); S.stars=d.stars||0;}catch(e){} }
+function save(){ try{localStorage.setItem(SAVE_KEY,JSON.stringify({letters:S.letters,stars:S.stars}))}catch(e){} }
+const boxCount = () => Math.min(4, 1 + Math.floor(S.letters/2));   // 2-3 Buchstaben -> 2 Kästen, ab 6 -> 4
+
+/* ---------- Maße ---------- */
+let bw, bh, pw;
+function metrics(){
+  const r = $('scene').getBoundingClientRect(), n = boxCount();
+  const portrait = r.height > r.width;
+  bw = Math.round(Math.min(r.width/(n+ (portrait?0.5:1.6)), r.height*(portrait?.20:.30)));
+  bh = Math.round(bw*1.05);
+  pw = Math.round(Math.min(bw*1.05, r.height*.26));
+  const st = $('scene').style;
+  st.setProperty('--bw', bw+'px'); st.setProperty('--bh', bh+'px'); st.setProperty('--pw', pw+'px');
+  st.setProperty('--van', Math.round(Math.min(r.height*.16, 96))+'px');
+  // Paket unten, Kastenreihe genau darüber
+  parcelY = Math.round(r.height - pw - Math.max(24, r.height*.09));
+  st.setProperty('--bb', Math.round(r.height - parcelY + Math.max(14, r.height*.03))+'px');
+}
+let parcelY = 0;
+function parcelHome(){
+  const r = $('scene').getBoundingClientRect();
+  return {x:(r.width - pw)/2, y:parcelY};
+}
+
+/* ---------- Farben ---------- */
+function shade(hex,f){ const n=parseInt(hex.slice(1),16); let r=n>>16,g=n>>8&255,b=n&255;
+  const t=f>0?255:0,k=Math.abs(f); r=Math.round(r+(t-r)*k); g=Math.round(g+(t-g)*k); b=Math.round(b+(t-b)*k);
+  return `rgb(${r},${g},${b})`; }
+function colorVars(el, hex){ el.style.setProperty('--c',hex); el.style.setProperty('--cl',shade(hex,.3)); el.style.setProperty('--cd',shade(hex,-.3)); }
+
+/* ---------- Runde aufbauen ---------- */
+const active = () => ORDER.slice(0, S.letters);
+function clashes(a,b){ return CONFUSE.some(p => p.includes(a) && p.includes(b)); }
+
+function newParcel(isNew){
+  const n = boxCount(), pool = active();
+  // neu freigeschalteter Buchstabe kommt zuerst dran
+  const target = isNew ? ORDER[S.letters-1] : pick(pool);
+  const others = [];
+  for(const c of shuffle(pool)){
+    if(others.length >= n-1) break;
+    if(c === target || clashes(c,target) || others.some(o=>clashes(o,c))) continue;
+    others.push(c);
+  }
+  // notfalls auffüllen
+  for(const c of shuffle(pool)){ if(others.length>=n-1) break; if(c!==target && !others.includes(c)) others.push(c); }
+  S.target = target; S.word = pick(LETTERS[target].words);
+  S.boxes = shuffle([target, ...others]);
+  renderBoxes(isNew ? target : null);
+  showParcel();
+  setTimeout(() => sayWord(), 800);
+  scheduleHint();
+}
+
+function renderBoxes(newLetter){
+  const wrap = $('boxes'); wrap.innerHTML = '';
+  S.boxes.forEach(L => {
+    const b = document.createElement('div');
+    b.className = 'box' + (L===newLetter ? ' new' : ''); b.dataset.l = L;
+    colorVars(b, LETTERS[L].color);
+    b.innerHTML = `<span class="hint">👇</span><div class="body"><span class="slot"></span><span class="letter">${L}</span></div><div class="post"></div>`;
+    b.addEventListener('pointerdown', e => { e.stopPropagation();
+      if(S.busy) return;
+      const a = anchorOf(L);
+      say(`${L} wie ${a}.`, {rate:.85});
+      say(stretched(a, L), {cancel:false, rate:.66, delay:1400});
+    });
+    wrap.appendChild(b);
+  });
+}
+
+function showParcel(){
+  const p = $('parcel') || Object.assign(document.createElement('div'), {id:'parcel'});
+  p.className = 'enter'; p.innerHTML = `<span class="pic">${S.word[1]}</span>`;
+  const h = parcelHome(); p.style.left = h.x+'px'; p.style.top = h.y+'px';
+  if(!p.parentElement) $('scene').appendChild(p);
+}
+
+function renderDots(){
+  const r = $('round'); r.innerHTML = '';
+  for(let i=0;i<S.roundLen;i++){ const d=document.createElement('span'); d.className='dot'+(i<S.done?' done':''); r.appendChild(d); }
+}
+
+function scheduleHint(){
+  clearTimeout(S.hintT);
+  S.hintT = setTimeout(() => {
+    if(S.busy) return;
+    say(stretched(S.word[0], S.target), {rate:.66});
+    say(`${S.target} wie ${anchorOf(S.target)}.`, {cancel:false, rate:.85, delay:1600});
+    document.querySelector(`.box[data-l="${S.target}"]`)?.classList.add('tip');
+  }, 13000);
+}
+
+/* ---------- Ziehen ---------- */
+let drag = null;
+$('scene').addEventListener('pointerdown', e => {
+  const p = e.target.closest('#parcel'); if(!p || S.busy) return;
+  ac(); e.preventDefault();
+  const r = p.getBoundingClientRect(), sr = $('scene').getBoundingClientRect();
+  drag = {sx:e.clientX, sy:e.clientY, ox:r.left-sr.left, oy:r.top-sr.top, moved:false};
+  $('scene').setPointerCapture(e.pointerId);
+});
+$('scene').addEventListener('pointermove', e => {
+  if(!drag) return;
+  const dx = e.clientX-drag.sx, dy = e.clientY-drag.sy;
+  if(!drag.moved){ if(Math.hypot(dx,dy)<10) return; drag.moved = true;
+    clearTimeout(S.hintT); $('parcel').classList.remove('enter','glide'); $('parcel').classList.add('drag'); SFX.grab(); }
+  const p = $('parcel');
+  p.style.left = (drag.ox+dx)+'px'; p.style.top = (drag.oy+dy)+'px';
+  const hit = boxAt(e.clientX, e.clientY);
+  document.querySelectorAll('.box').forEach(b => b.classList.toggle('hot', b===hit));
+});
+function boxAt(x,y){
+  return [...document.querySelectorAll('.box')].find(b => {
+    const r = b.getBoundingClientRect();
+    return x > r.left-20 && x < r.right+20 && y > r.top-20 && y < r.bottom+40;
+  });
+}
+function endDrag(e){
+  if(!drag) return; const d = drag; drag = null;
+  const p = $('parcel'); p.classList.remove('drag');
+  document.querySelectorAll('.box').forEach(b => b.classList.remove('hot'));
+  if(!d.moved){ sayWord(); scheduleHint(); return; }
+  const hit = boxAt(e.clientX, e.clientY);
+  if(hit) deliver(hit); else { home(); scheduleHint(); }
+}
+$('scene').addEventListener('pointerup', endDrag);
+$('scene').addEventListener('pointercancel', endDrag);
+function home(){
+  const p = $('parcel'), h = parcelHome();
+  p.classList.add('glide'); p.style.left = h.x+'px'; p.style.top = h.y+'px';
+  setTimeout(() => p.classList.remove('glide'), 420);
+}
+
+/* ---------- Einwerfen ---------- */
+function deliver(box){
+  const L = box.dataset.l;
+  clearTimeout(S.hintT); S.busy = true;
+  document.querySelectorAll('.box').forEach(b => b.classList.remove('tip'));
+
+  if(L !== S.target){
+    box.classList.add('wrong'); SFX.nope();
+    say('Hör nochmal.', {rate:.9});
+    say(stretched(S.word[0], S.target), {cancel:false, rate:.66, delay:900});
+    say(`${S.word[0]} fängt mit ${S.target} an, wie ${anchorOf(S.target)}.`, {cancel:false, rate:.85, delay:2100});
+    home();
+    setTimeout(() => { box.classList.remove('wrong'); S.busy = false; scheduleHint(); }, 3200);
+    return;
+  }
+
+  box.classList.add('open'); SFX.post();
+  const p = $('parcel'), br = box.getBoundingClientRect(), sr = $('scene').getBoundingClientRect();
+  p.classList.add('glide');
+  p.style.left = (br.left - sr.left + br.width/2 - pw/2)+'px';
+  p.style.top  = (br.top - sr.top + br.height*.1)+'px';
+  setTimeout(() => { p.classList.remove('glide'); p.classList.add('gone'); }, 400);
+  burst(box, ['⭐','✨','💌']);
+  say(`${S.target} wie ${S.word[0]}. Richtig!`, {rate:.85});
+
+  S.stars++; S.done++; save();
+  $('stars').textContent = S.stars;
+  const ch = $('starChip'); ch.classList.remove('bump'); void ch.offsetWidth; ch.classList.add('bump');
+  renderDots();
+
+  setTimeout(() => {
+    p.remove();
+    if(S.done >= S.roundLen) finishRound(); else { S.busy = false; newParcel(false); }
+  }, 1500);
+}
+
+/* ---------- Rundenende ---------- */
+function finishRound(){
+  S.done = 0; renderDots();
+  $('boxes').innerHTML = '';
+  const van = $('van'); van.style.left = '-15%';
+  requestAnimationFrame(() => { van.style.left = '105%'; });
+  SFX.horn(); setTimeout(SFX.fan, 400);
+  const unlock = S.letters < ORDER.length;
+  banner(unlock ? '🎉 Alles ausgetragen!' : '🎉 Alles ausgetragen!');
+  say('Super! Die ganze Post ist ausgetragen!');
+  setTimeout(() => {
+    if(unlock){
+      S.letters++; save();
+      const L = ORDER[S.letters-1], anchor = LETTERS[L].anchor;
+      banner(`Neu: ${L}`);
+      const a = anchor || LETTERS[L].words[0][0];
+      say(`Ein neuer Briefkasten: ${L} wie ${a}.`, {rate:.85});
+      say(stretched(a, L), {cancel:false, rate:.66, delay:1900});
+      setTimeout(() => { hideBanner(); S.busy = false; metrics(); newParcel(true); }, 3200);
+    } else {
+      setTimeout(() => { hideBanner(); S.busy = false; newParcel(false); }, 1200);
+    }
+  }, 2600);
+}
+function banner(t){ const b=$('banner'); b.textContent=t; b.classList.add('show'); }
+function hideBanner(){ $('banner').classList.remove('show'); }
+
+function burst(el, chars){
+  const r = el.getBoundingClientRect();
+  for(let i=0;i<9;i++){
+    const s = document.createElement('span'); s.className='fx'; s.textContent = pick(chars);
+    s.style.left = (r.left+r.width/2-20)+'px'; s.style.top = (r.top)+'px';
+    s.style.setProperty('--dx', rnd(-120,120)+'px'); s.style.setProperty('--dy', rnd(-240,-130)+'px');
+    s.style.animationDelay = (i*40)+'ms';
+    document.body.appendChild(s); setTimeout(()=>s.remove(), 1700);
+  }
+}
+
+/* ---------- Sonstiges ---------- */
+$('speak').addEventListener('click', () => { if(!S.busy && S.word) sayWord(); });
+$('fs').addEventListener('click', () => {
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(()=>{});
+  else document.exitFullscreen?.();
+});
+let resetT;
+$('starChip').addEventListener('pointerdown', () => { resetT = setTimeout(() => {
+  if(confirm('Spielstand wirklich zurücksetzen?')){ localStorage.removeItem(SAVE_KEY); location.reload(); }
+}, 3000); });
+['pointerup','pointerleave','pointercancel'].forEach(ev => $('starChip').addEventListener(ev, () => clearTimeout(resetT)));
+let rT;
+window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => {
+  metrics(); const p = $('parcel'); if(p && !drag){ const h = parcelHome(); p.style.left=h.x+'px'; p.style.top=h.y+'px'; }
+}, 150); });
+$('go').addEventListener('click', () => {
+  ac(); document.documentElement.requestFullscreen?.().catch(()=>{});
+  $('start').remove();
+  setTimeout(() => { metrics(); renderDots(); newParcel(false); }, 300);
+});
+document.addEventListener('contextmenu', e => e.preventDefault());
+load(); $('stars').textContent = S.stars; metrics(); renderDots();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js', {scope:'./'}).catch(()=>{}));
+}
+</script>
+</body>
+</html>
