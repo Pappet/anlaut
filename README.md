@@ -4,22 +4,33 @@ Lernspiel zum ersten Laut eines Wortes (Anlaut), als Progressive Web App.
 Offline nutzbar, Spielstand im localStorage.
 
 ## Ablauf
-Ein Paket mit Bild erscheint. Die Stimme sagt dreistufig vor:
-ganzes Wort → gedehnt ("Mmmmaus") → nur der Laut ("Wo gehört mmm hin?").
+Ein Paket mit Bild erscheint. Die Stimme sagt das Wort, dann (falls eine
+eigene Aufnahme vorliegt) den Laut, dann "Womit fängt Fisch an?".
 Das Paket in den passenden Briefkasten ziehen. 7 Pakete = eine Runde,
 danach fährt das Postauto durch und ein neuer Buchstabe kommt dazu.
 
 - Paket antippen: nochmal anhören (auch über 🔊 links unten)
-- Briefkasten antippen: dessen Laut anhören
+- Briefkasten antippen: "L wie Löwe" (plus Laut, falls aufgenommen)
 - Nach 13 Sekunden ohne Aktion kommt ein Tipp
-- Falscher Kasten: Paket kommt zurück, der Laut wird erklärt
+- Falscher Kasten: Paket kommt zurück, das Wort wird erklärt
 
 ## Aussprache
-Isolierte Laute werden NIE gesprochen: Android-TTS liest "lll" als "El El El".
-Stattdessen spricht die Stimme immer ein echtes Wort mit gedehntem Anfang
-("llllöwe", klein geschrieben, Tempo 0.66) plus "L wie Löwe".
-Dehnbar ja/nein steht als `long` bei jedem Buchstaben in `LETTERS`;
-harte Laute (B, T, K, P, D) werden nicht gedehnt.
+Android-TTS kann Laute nicht dehnen: "lll" wird als "El El El" gelesen,
+und auch Tricks wie "llllöwe" klingen schlecht. Deshalb sagt die Stimme
+grundsätzlich nur ganze Wörter und "L wie Löwe".
+
+Für echte Laute: `aufnahme.html` im Browser öffnen (HTTPS oder localhost),
+die 14 Laute selbst einsprechen, optional auch die Wörter, dann
+"Alle speichern". Die heruntergeladene ZIP enthält einen Ordner `sounds/`,
+der neben `index.html` gehört. Das Spiel liest beim Start `sounds/index.json`
+und benutzt vorhandene Dateien statt der TTS-Stimme:
+
+    sounds/laut-L.webm     gedehnter Laut
+    sounds/wort-Löwe.webm  das Wort
+    sounds/index.json      Liste der vorhandenen Dateien
+
+Fehlt eine Datei, springt die TTS-Stimme ein. Es funktioniert also auch
+mit nur ein paar Aufnahmen.
 
 ## Buchstaben
 Reihenfolge in `ORDER` (index.html): erst dehnbare Laute (S, M, L),

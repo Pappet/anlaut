@@ -197,14 +197,50 @@ let voice=null;
 const HAS_SPEECH = 'speechSynthesis' in window;
 function pickVoice(){ voice = speechSynthesis.getVoices().find(v=>v.lang&&v.lang.toLowerCase().startsWith('de'))||null; }
 if(HAS_SPEECH){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
-/* Wortanfang dehnen: "Fisch" -> "Ffffisch". Nur bei dehnbaren Lauten sinnvoll. */
-function stretched(word, letter){
-  if(!LETTERS[letter].long) return word;
-  // klein geschrieben, sonst liest Android-TTS "SSSSonne" wieder als Abkürzung
-  const w = word.toLowerCase();
-  return w[0].repeat(4) + w.slice(1);
-}
 const anchorOf = L => LETTERS[L].anchor || LETTERS[L].words[0][0];
+
+/* ---------- Eigene Aufnahmen ----------
+   Liegen Dateien in ./sounds/ (siehe aufnahme.html), werden sie statt der
+   TTS-Stimme benutzt: laut-L.webm für den gedehnten Laut, wort-Fisch.webm
+   für das Wort. Fehlt eine Datei, springt die TTS-Stimme ein. */
+const SOUND_DIR = './sounds/';
+let SOUNDS = new Set();
+async function probeSounds(){
+  try{
+    const r = await fetch(SOUND_DIR + 'index.json', {cache:'no-cache'});
+    if(r.ok) SOUNDS = new Set(await r.json());
+  }catch(e){}
+}
+const hasSound = f => SOUNDS.has(f);
+function playFile(f){
+  return new Promise(res => {
+    const a = new Audio(SOUND_DIR + f);
+    a.onended = res; a.onerror = res;
+    a.play().catch(res);
+  });
+}
+function speakP(text, rate=.9){
+  return new Promise(res => {
+    if(!HAS_SPEECH) return res();
+    const u = new SpeechSynthesisUtterance(text); u.lang='de-DE'; if(voice)u.voice=voice;
+    u.rate = rate; u.pitch = 1.12; u.onend = res; u.onerror = res;
+    speechSynthesis.speak(u);
+  });
+}
+let seqId = 0;
+/* Spielt Bausteine nacheinander ab: {file} wenn vorhanden, sonst {text} */
+async function seq(items){
+  const my = ++seqId;
+  if(HAS_SPEECH) speechSynthesis.cancel();
+  for(const it of items){
+    if(my !== seqId) return;                    // neue Ansage hat übernommen
+    if(it.file && hasSound(it.file)) await playFile(it.file);
+    else if(it.text) await speakP(it.text, it.rate || .9);
+    if(it.pause) await new Promise(r => setTimeout(r, it.pause));
+  }
+}
+const lautPart = L => ({file:`laut-${L}.webm`, text:null, pause:250});
+const wortPart = w => ({file:`wort-${w}.webm`, text:w, pause:250});
 
 function say(text, {cancel=true, rate=.9, delay=0}={}){
   if(!HAS_SPEECH) return;
@@ -213,15 +249,15 @@ function say(text, {cancel=true, rate=.9, delay=0}={}){
     u.rate=rate; u.pitch=1.12; speechSynthesis.speak(u); };
   delay ? setTimeout(go, delay) : go();
 }
-/* Dreistufig: ganzes Wort, Wortanfang gedehnt, Frage. Nie ein isolierter Laut. */
+/* Wort, dann der Laut (aus der Aufnahme, sonst übersprungen), dann die Frage */
 function sayWord(full=true){
   const T = S.target, w = S.word[0];
-  if(!HAS_SPEECH) return;
-  speechSynthesis.cancel();
-  say(w, {cancel:false});
-  if(!full) return;
-  say(stretched(w, T), {cancel:false, rate:.66, delay:900});
-  say('Womit fängt ' + w + ' an?', {cancel:false, delay:2600});
+  const items = [wortPart(w)];
+  if(full){
+    if(hasSound(`laut-${T}.webm`)) items.push(lautPart(T), {text:w, rate:.8, pause:250});
+    items.push({text:`Womit fängt ${w} an?`, rate:.9});
+  }
+  seq(items);
 }
 
 /* ---------- Spielstand ---------- */
@@ -290,9 +326,7 @@ function renderBoxes(newLetter){
     b.innerHTML = `<span class="hint">👇</span><div class="body"><span class="slot"></span><span class="letter">${L}</span></div><div class="post"></div>`;
     b.addEventListener('pointerdown', e => { e.stopPropagation();
       if(S.busy) return;
-      const a = anchorOf(L);
-      say(`${L} wie ${a}.`, {rate:.85});
-      say(stretched(a, L), {cancel:false, rate:.66, delay:1400});
+      seq([lautPart(L), {text:`${L} wie ${anchorOf(L)}.`, rate:.85}]);
     });
     wrap.appendChild(b);
   });
@@ -314,8 +348,7 @@ function scheduleHint(){
   clearTimeout(S.hintT);
   S.hintT = setTimeout(() => {
     if(S.busy) return;
-    say(stretched(S.word[0], S.target), {rate:.66});
-    say(`${S.target} wie ${anchorOf(S.target)}.`, {cancel:false, rate:.85, delay:1600});
+    seq([lautPart(S.target), {text:`${S.target} wie ${anchorOf(S.target)}.`, rate:.85}]);
     document.querySelector(`.box[data-l="${S.target}"]`)?.classList.add('tip');
   }, 13000);
 }
@@ -369,9 +402,8 @@ function deliver(box){
 
   if(L !== S.target){
     box.classList.add('wrong'); SFX.nope();
-    say('Hör nochmal.', {rate:.9});
-    say(stretched(S.word[0], S.target), {cancel:false, rate:.66, delay:900});
-    say(`${S.word[0]} fängt mit ${S.target} an, wie ${anchorOf(S.target)}.`, {cancel:false, rate:.85, delay:2100});
+    seq([{text:'Hör nochmal.', rate:.9, pause:200}, wortPart(S.word[0]), lautPart(S.target),
+         {text:`${S.word[0]} fängt mit ${S.target} an, wie ${anchorOf(S.target)}.`, rate:.85}]);
     home();
     setTimeout(() => { box.classList.remove('wrong'); S.busy = false; scheduleHint(); }, 3200);
     return;
@@ -384,7 +416,7 @@ function deliver(box){
   p.style.top  = (br.top - sr.top + br.height*.1)+'px';
   setTimeout(() => { p.classList.remove('glide'); p.classList.add('gone'); }, 400);
   burst(box, ['⭐','✨','💌']);
-  say(`${S.target} wie ${S.word[0]}. Richtig!`, {rate:.85});
+  seq([{text:`${S.target} wie ${S.word[0]}. Richtig!`, rate:.85}]);
 
   S.stars++; S.done++; save();
   $('stars').textContent = S.stars;
@@ -406,15 +438,14 @@ function finishRound(){
   SFX.horn(); setTimeout(SFX.fan, 400);
   const unlock = S.letters < ORDER.length;
   banner(unlock ? '🎉 Alles ausgetragen!' : '🎉 Alles ausgetragen!');
-  say('Super! Die ganze Post ist ausgetragen!');
+  seq([{text:'Super! Die ganze Post ist ausgetragen!'}]);
   setTimeout(() => {
     if(unlock){
       S.letters++; save();
       const L = ORDER[S.letters-1], anchor = LETTERS[L].anchor;
       banner(`Neu: ${L}`);
       const a = anchor || LETTERS[L].words[0][0];
-      say(`Ein neuer Briefkasten: ${L} wie ${a}.`, {rate:.85});
-      say(stretched(a, L), {cancel:false, rate:.66, delay:1900});
+      seq([{text:`Ein neuer Briefkasten: ${L} wie ${a}.`, rate:.85, pause:250}, lautPart(L)]);
       setTimeout(() => { hideBanner(); S.busy = false; metrics(); newParcel(true); }, 3200);
     } else {
       setTimeout(() => { hideBanner(); S.busy = false; newParcel(false); }, 1200);
@@ -452,6 +483,7 @@ window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() =
 }, 150); });
 $('go').addEventListener('click', () => {
   ac(); document.documentElement.requestFullscreen?.().catch(()=>{});
+  probeSounds();
   $('start').remove();
   setTimeout(() => { metrics(); renderDots(); newParcel(false); }, 300);
 });

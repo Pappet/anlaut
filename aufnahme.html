@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anlaut-Post — Aufnahme</title>
+<style>
+:root{--blue:#2E6FB7;--ink:#26313D}
+*{box-sizing:border-box}
+body{font-family:system-ui,sans-serif;margin:0;padding:16px 16px 90px;background:#F2F5F8;color:var(--ink)}
+h1{font-size:21px;margin:0 0 6px}
+p{margin:0 0 14px;font-size:14px;color:#5A6673;line-height:1.45}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tab{flex:1;padding:10px;border:2px solid var(--blue);background:#fff;color:var(--blue);border-radius:12px;
+  font-size:15px;font-weight:600;cursor:pointer}
+.tab.on{background:var(--blue);color:#fff}
+.item{display:flex;align-items:center;gap:10px;background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:8px;
+  box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.item .name{flex:1;font-size:17px;font-weight:600}
+.item .name small{display:block;font-weight:400;font-size:13px;color:#5A6673}
+.item.done{border-left:6px solid #3EA55E}
+button{font-family:inherit;font-size:16px;border-radius:10px;border:2px solid var(--blue);background:#fff;
+  color:var(--blue);padding:9px 13px;cursor:pointer}
+button.rec{background:#C8352B;border-color:#C8352B;color:#fff;min-width:108px}
+button.rec.active{background:#7E1F19;border-color:#7E1F19}
+button:disabled{opacity:.4;cursor:default}
+.bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:2px solid #DCE3EA;padding:12px 16px;
+  display:flex;gap:10px;align-items:center;justify-content:space-between}
+.bar b{font-size:15px}
+#save{background:#3EA55E;border-color:#3EA55E;color:#fff;font-weight:600}
+.hint{background:#FFF6D8;border:2px solid #E8C84A;border-radius:12px;padding:10px 12px;font-size:14px;margin-bottom:14px}
+</style>
+</head>
+<body>
+<h1>Eigene Stimme aufnehmen</h1>
+<p>Nimm die Laute und optional die Wörter selbst auf. Das Spiel benutzt dann eure Stimmen
+statt der Roboterstimme. Am Ende „Alle speichern“ drücken: Es lädt eine ZIP-Datei herunter,
+deren Inhalt in den Ordner <code>sounds/</code> des Spiels gehört.</p>
+
+<div class="hint" id="hint">Aufnahme wird vorbereitet…</div>
+
+<div class="tabs">
+  <button class="tab on" data-t="laute">Laute (wichtig)</button>
+  <button class="tab" data-t="woerter">Wörter (optional)</button>
+</div>
+<div id="list"></div>
+
+<div class="bar">
+  <b id="count">0 Aufnahmen</b>
+  <span>
+    <button id="clear">Alle löschen</button>
+    <button id="save">Alle speichern</button>
+  </span>
+</div>
+
+<script>
+/* Dieselben Listen wie im Spiel */
+const LETTERS = {
+  S:{long:true, words:['Sonne','Stern','Socke','Seehund','Schnecke']},
+  M:{long:true, words:['Maus','Mond','Milch','Melone','Marienkäfer','Mais']},
+  L:{long:true, words:['Löwe','Luftballon','Lolli','Leiter','Lokomotive']},
+  N:{long:true, words:['Nase','Nadel','Nilpferd','Note']},
+  F:{long:true, words:['Fisch','Frosch','Feuer','Fuchs','Feder','Fahrrad']},
+  R:{long:true, words:['Rakete','Regenbogen','Ring','Roboter','Rose']},
+  A:{long:true, words:['Apfel','Ananas','Auto','Ampel','Auge','Affe']},
+  O:{long:true, words:['Orange','Ohr','Olive','Otter']},
+  I:{long:true, words:['Igel','Insel','Iglu']},
+  B:{long:false, words:['Banane','Baum','Ball','Biene','Bär','Buch','Brot']},
+  T:{long:false, words:['Tiger','Tomate','Traube','Taxi','Tasse']},
+  K:{long:false, words:['Katze','Krone','Koffer','Kuh','Kerze','Krokodil']},
+  P:{long:false, words:['Pinguin','Pilz','Pizza','Panda','Paprika']},
+  D:{long:false, words:['Delfin','Drache','Dino','Dose','Dusche']}
+};
+const ORDER = ['S','M','L','A','F','B','N','O','T','R','K','I','P','D'];
+
+/* ---------- Speicher (IndexedDB, damit man in Etappen aufnehmen kann) ---------- */
+let db;
+function openDB(){
+  return new Promise((res,rej) => {
+    const r = indexedDB.open('anlaut-aufnahmen',1);
+    r.onupgradeneeded = () => r.result.createObjectStore('files');
+    r.onsuccess = () => { db = r.result; res(); };
+    r.onerror = () => rej(r.error);
+  });
+}
+const put = (k,v) => new Promise(res => { const t=db.transaction('files','readwrite'); t.objectStore('files').put(v,k); t.oncomplete=res; });
+const del = k => new Promise(res => { const t=db.transaction('files','readwrite'); t.objectStore('files').delete(k); t.oncomplete=res; });
+const get = k => new Promise(res => { const r=db.transaction('files').objectStore('files').get(k); r.onsuccess=()=>res(r.result); });
+const keys = () => new Promise(res => { const r=db.transaction('files').objectStore('files').getAllKeys(); r.onsuccess=()=>res(r.result); });
+const clearAll = () => new Promise(res => { const t=db.transaction('files','readwrite'); t.objectStore('files').clear(); t.oncomplete=res; });
+
+/* ---------- Aufnahme ---------- */
+let stream=null, rec=null, chunks=[], activeBtn=null, activeKey=null;
+async function initMic(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true}});
+    document.getElementById('hint').innerHTML =
+      'Tipp: Den Laut lang ziehen („Llll…“, etwa eine Sekunde), ruhig übertreiben. ' +
+      'Bei B, T, K, P und D geht das nicht, die spricht man kurz und knackig.';
+  }catch(e){
+    document.getElementById('hint').textContent =
+      'Kein Zugriff aufs Mikrofon. Die Seite muss über HTTPS (oder localhost) laufen, und der Zugriff muss erlaubt werden.';
+  }
+}
+function startRec(key, btn){
+  if(!stream) return;
+  chunks = [];
+  const mt = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
+  rec = new MediaRecorder(stream, mt ? {mimeType:mt} : undefined);
+  rec.ondataavailable = e => chunks.push(e.data);
+  rec.onstop = async () => {
+    const blob = new Blob(chunks, {type:'audio/webm'});
+    await put(key, blob);
+    activeBtn = null; activeKey = null;
+    render();
+  };
+  rec.start(); activeBtn = btn; activeKey = key;
+  btn.classList.add('active'); btn.textContent = '■ Stopp';
+}
+function stopRec(){ if(rec && rec.state === 'recording') rec.stop(); }
+
+/* ---------- ZIP (ohne Kompression, reicht für Audio) ---------- */
+function crc32(buf){
+  let c, t = crc32.t;
+  if(!t){ t = crc32.t = []; for(let n=0;n<256;n++){ c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } }
+  let crc = 0xFFFFFFFF;
+  for(let i=0;i<buf.length;i++) crc = (crc>>>8) ^ t[(crc ^ buf[i]) & 255];
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function zip(files){                       // files: [{name, data:Uint8Array}]
+  const enc = new TextEncoder(), parts = [], dir = [];
+  let off = 0;
+  for(const f of files){
+    const name = enc.encode(f.name), crc = crc32(f.data), n = f.data.length;
+    const head = new Uint8Array(30 + name.length), hv = new DataView(head.buffer);
+    hv.setUint32(0,0x04034b50,true); hv.setUint16(4,20,true); hv.setUint32(14,crc,true);
+    hv.setUint32(18,n,true); hv.setUint32(22,n,true); hv.setUint16(26,name.length,true);
+    head.set(name,30);
+    parts.push(head, f.data);
+    const c = new Uint8Array(46 + name.length), cv = new DataView(c.buffer);
+    cv.setUint32(0,0x02014b50,true); cv.setUint16(4,20,true); cv.setUint16(6,20,true);
+    cv.setUint32(16,crc,true); cv.setUint32(20,n,true); cv.setUint32(24,n,true);
+    cv.setUint16(28,name.length,true); cv.setUint32(42,off,true); c.set(name,46);
+    dir.push(c);
+    off += head.length + n;
+  }
+  let dirSize = 0; dir.forEach(d => dirSize += d.length);
+  const end = new Uint8Array(22), ev = new DataView(end.buffer);
+  ev.setUint32(0,0x06054b50,true); ev.setUint16(8,dir.length,true); ev.setUint16(10,dir.length,true);
+  ev.setUint32(12,dirSize,true); ev.setUint32(16,off,true);
+  return new Blob([...parts, ...dir, end], {type:'application/zip'});
+}
+
+/* ---------- Oberfläche ---------- */
+let tab = 'laute';
+function itemsFor(t){
+  if(t === 'laute') return ORDER.map(L => ({
+    key:`laut-${L}.webm`, title:`Laut ${L}`,
+    sub: LETTERS[L].long ? `lang ziehen, wie am Anfang von „${LETTERS[L].anchor || LETTERS[L].words[0]}“`
+                         : `kurz und knackig, wie am Anfang von „${LETTERS[L].words[0]}“`
+  }));
+  const out = [];
+  ORDER.forEach(L => LETTERS[L].words.forEach(w => out.push({key:`wort-${w}.webm`, title:w, sub:`Buchstabe ${L}`})));
+  return out;
+}
+let have = new Set();
+async function render(){
+  have = new Set(await keys());
+  const list = document.getElementById('list'); list.innerHTML = '';
+  for(const it of itemsFor(tab)){
+    const row = document.createElement('div');
+    row.className = 'item' + (have.has(it.key) ? ' done' : '');
+    row.innerHTML = `<span class="name">${it.title}<small>${it.sub}</small></span>`;
+    const rb = document.createElement('button'); rb.className = 'rec';
+    rb.textContent = have.has(it.key) ? '● Neu' : '● Aufnehmen';
+    rb.onclick = () => { if(activeKey === it.key) stopRec(); else { stopRec(); startRec(it.key, rb); } };
+    const pb = document.createElement('button'); pb.textContent = '▶'; pb.disabled = !have.has(it.key);
+    pb.onclick = async () => { const b = await get(it.key); if(b) new Audio(URL.createObjectURL(b)).play(); };
+    row.append(rb, pb);
+    list.appendChild(row);
+  }
+  document.getElementById('count').textContent = `${have.size} Aufnahmen`;
+}
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === b));
+  tab = b.dataset.t; render();
+});
+document.getElementById('clear').onclick = async () => {
+  if(confirm('Wirklich alle Aufnahmen löschen?')){ await clearAll(); render(); }
+};
+document.getElementById('save').onclick = async () => {
+  const ks = await keys();
+  if(!ks.length){ alert('Noch keine Aufnahmen da.'); return; }
+  const files = [];
+  for(const k of ks){
+    const blob = await get(k);
+    files.push({name:'sounds/' + k, data:new Uint8Array(await blob.arrayBuffer())});
+  }
+  files.push({name:'sounds/index.json', data:new TextEncoder().encode(JSON.stringify(ks))});
+  const url = URL.createObjectURL(zip(files));
+  const a = document.createElement('a'); a.href = url; a.download = 'anlaut-sounds.zip'; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+};
+openDB().then(render).then(initMic);
+</script>
+</body>
+</html>
