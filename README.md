@@ -49,5 +49,10 @@ Für eigene Zeichnungen das Emoji durch ein <img>-Tag ersetzen.
 ## Veröffentlichen / Installieren / Ändern
 Wie bei den anderen Spielen. Nach Änderungen `VERSION` in `sw.js` hochzählen.
 
+## Für Eltern
+Das Spiel schweigt komplett, solange es im Hintergrund ist (Sichtbarkeits-Wechsel):
+keine Ansagen, Töne oder Tipp-Timer laufen in andere Apps hinein — beim
+Zurückkehren macht es genau da weiter, wo es aufgehört hat.
+
 ## Spielstand zurücksetzen
 Stern-Anzeige oben rechts 3 Sekunden gedrückt halten.

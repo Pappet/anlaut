@@ -179,6 +179,9 @@ const S = {letters:2, boxes:[], target:null, word:null, done:0, stars:0, busy:fa
 let AC=null;
 function ac(){ if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}} if(AC&&AC.state==='suspended')AC.resume(); return AC; }
 function tone(f,d=.12,type='sine',vol=.16,delay=0,slide=0){
+  // Hintergrund: gar nichts von sich geben — das Tablet teilt sich Audio/TTS
+  // mit allen anderen Apps, im Hintergrund schweigt das Spiel.
+  if(document.hidden) return;
   const a=ac(); if(!a) return; const t=a.currentTime+delay;
   const o=a.createOscillator(), g=a.createGain(); o.type=type; o.frequency.setValueAtTime(f,t);
   if(slide) o.frequency.exponentialRampToValueAtTime(f*slide,t+d);
@@ -212,16 +215,22 @@ async function probeSounds(){
   }catch(e){}
 }
 const hasSound = f => SOUNDS.has(f);
+let currentAudio = null;
 function playFile(f){
   return new Promise(res => {
+    const done = () => { if(currentAudio === a) currentAudio = null; res(); };
     const a = new Audio(SOUND_DIR + f);
-    a.onended = res; a.onerror = res;
-    a.play().catch(res);
+    currentAudio = a;
+    // 'pause' mit rein: beim Hintergrund-Schweigen stoppen wir die Aufnahme
+    // aktiv, und die wartende seq()-Schleife soll nicht hängen bleiben.
+    a.onended = done; a.onerror = done; a.onpause = done;
+    a.play().catch(done);
   });
 }
 function speakP(text, rate=.9){
   return new Promise(res => {
     if(!HAS_SPEECH) return res();
+    if(document.hidden) return res();          // Hintergrund: nicht sprechen
     const u = new SpeechSynthesisUtterance(text); u.lang='de-DE'; if(voice)u.voice=voice;
     u.rate = rate; u.pitch = 1.12; u.onend = res; u.onerror = res;
     speechSynthesis.speak(u);
@@ -232,6 +241,7 @@ let seqId = 0;
 async function seq(items){
   const my = ++seqId;
   if(HAS_SPEECH) speechSynthesis.cancel();
+  if(document.hidden) return;                 // Hintergrund: gar nicht erst anfangen
   for(const it of items){
     if(my !== seqId) return;                    // neue Ansage hat übernommen
     if(it.file && hasSound(it.file)) await playFile(it.file);
@@ -245,8 +255,10 @@ const wortPart = w => ({file:`wort-${w}.webm`, text:w, pause:250});
 function say(text, {cancel=true, rate=.9, delay=0}={}){
   if(!HAS_SPEECH) return;
   if(cancel) speechSynthesis.cancel();
-  const go = () => { const u=new SpeechSynthesisUtterance(text); u.lang='de-DE'; if(voice)u.voice=voice;
+  const go = () => { if(document.hidden) return;   // Hintergrund: schweigen
+    const u=new SpeechSynthesisUtterance(text); u.lang='de-DE'; if(voice)u.voice=voice;
     u.rate=rate; u.pitch=1.12; speechSynthesis.speak(u); };
+  if(document.hidden) return;                 // Hintergrund: gar nicht erst anstehen
   delay ? setTimeout(go, delay) : go();
 }
 /* Wort, dann der Laut (aus der Aufnahme, sonst übersprungen), dann die Frage */
@@ -346,8 +358,9 @@ function renderDots(){
 
 function scheduleHint(){
   clearTimeout(S.hintT);
+  if(document.hidden) return;                 // im Hintergrund keine Tipps
   S.hintT = setTimeout(() => {
-    if(S.busy) return;
+    if(!S.word || S.busy || document.hidden) return;   // defensiv: Spiel aktiv + sichtbar
     seq([lautPart(S.target), {text:`${S.target} wie ${anchorOf(S.target)}.`, rate:.85}]);
     document.querySelector(`.box[data-l="${S.target}"]`)?.classList.add('tip');
   }, 13000);
@@ -488,6 +501,34 @@ $('go').addEventListener('click', () => {
   setTimeout(() => { metrics(); renderDots(); newParcel(false); }, 300);
 });
 document.addEventListener('contextmenu', e => e.preventDefault());
+
+/* Hintergrund (mehrere Apps offen): komplett schweigen. Die Sprachausgabe des
+   Systems wird von ALLEN Apps geteilt — ohne das quatscht hier etwas in die
+   gerade geöffnete App hinein und umgekehrt. Der AudioContext wird eingefroren,
+   damit auch schon geplante Töne sterben; die Tipp-Timer laufen im Hintergrund
+   nicht. Beim Zurückkehren geht das Spiel genau da weiter, wo es war. */
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden){
+    seqId++;                                  // laufende seq()-Ansage abbrechen
+    if(HAS_SPEECH) speechSynthesis.cancel();  // laufende Ansage sofort aus
+    if(currentAudio){ try{currentAudio.pause()}catch(e){} currentAudio = null; }
+    clearTimeout(S.hintT); S.hintT = null;    // kein Tipp-Timer im Hintergrund
+    if(AC && AC.state === 'running') AC.suspend().catch(()=>{});
+  }else{
+    if(AC && AC.state === 'suspended') AC.resume().catch(()=>{});
+    // Tipp-Timer nur neu aufziehen, wenn die Spielfläche wirklich sichtbar ist
+    // — nicht unter Start-Banner oder der Rundenende-Sequenz (S.busy).
+    if(S.word && !S.busy && !document.getElementById('start')) scheduleHint();
+  }
+});
+/* iOS/Safari feuert visibilitychange beim App-Wechsel nicht immer. */
+window.addEventListener('pagehide', () => {
+  seqId++;
+  if(HAS_SPEECH) speechSynthesis.cancel();
+  if(currentAudio){ try{currentAudio.pause()}catch(e){} currentAudio = null; }
+  clearTimeout(S.hintT); S.hintT = null;
+});
+
 load(); $('stars').textContent = S.stars; metrics(); renderDots();
 
 if('serviceWorker' in navigator){
